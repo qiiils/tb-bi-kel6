@@ -1,35 +1,63 @@
 import streamlit as st
 import pandas as pd
 import plotly.express as px
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import classification_report
 
-# Load dataset
+st.title("📉 Dropout Risk Analyzer")
+
 @st.cache_data
 def load_data():
-    return pd.read_csv("enhanced_student_habits_performance_dataset.csv")
+    df = pd.read_csv("enhanced_student_habits_performance_dataset.csv")
+    df = df.copy()
+    # Encode dropout risk untuk model klasifikasi
+    df['dropout_risk_encoded'] = df['dropout_risk'].map({'Low': 0, 'Medium': 1, 'High': 2})
+    return df
 
 df = load_data()
 
-# Sidebar filters
-st.sidebar.title("Filter Data")
-selected_semester = st.sidebar.selectbox("Select Semester", sorted(df['semester'].unique()))
-selected_major = st.sidebar.selectbox("Select Major", sorted(df['major'].unique()))
-selected_gender = st.sidebar.selectbox("Select Gender", sorted(df['gender'].unique()))
+# Fitur & target untuk model
+features = [
+    'study_hours_per_day',
+    'sleep_hours',
+    'stress_level',
+    'exam_anxiety_score',
+    'time_management_score',
+    'mental_health_rating'
+]
+X = df[features]
+y = df['dropout_risk_encoded']
 
-# Apply filters
-filtered_df = df[(df['semester'] == selected_semester) &
-                 (df['major'] == selected_major) &
-                 (df['gender'] == selected_gender)]
+# Split data
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.3, random_state=42)
 
-# Halaman 1: Ringkasan
-st.title("🎓 Student Performance Dashboard")
+# Train model
+model = RandomForestClassifier(n_estimators=100, random_state=42)
+model.fit(X_train, y_train)
 
-col1, col2, col3 = st.columns(3)
-col1.metric("Average Exam Score", round(filtered_df['exam_score'].mean(), 2))
-col2.metric("Average GPA", round(filtered_df['previous_gpa'].mean(), 2))
-col3.metric("Avg Attendance %", f"{round(filtered_df['attendance_percentage'].mean(), 2)}%")
+# Evaluasi model
+st.subheader("Model Evaluation")
+y_pred = model.predict(X_test)
+st.text(classification_report(y_test, y_pred, target_names=['Low', 'Medium', 'High']))
 
-st.subheader("Academic Performance by Semester")
-st.bar_chart(filtered_df.groupby('semester')['exam_score'].mean())
+# Feature importance
+st.subheader("Top Contributing Factors")
+importances = pd.Series(model.feature_importances_, index=features).sort_values(ascending=True)
+fig = px.bar(importances, orientation='h', title='Feature Importance')
+st.plotly_chart(fig)
 
-st.subheader("Study Hours vs Exam Score")
-st.plotly_chart(px.scatter(filtered_df, x='study_hours_per_day', y='exam_score', trendline="ols"))
+# Simulasi prediksi
+st.subheader("Simulate Dropout Risk Prediction")
+input_data = {}
+for feature in features:
+    min_val = float(df[feature].min())
+    max_val = float(df[feature].max())
+    mean_val = float(df[feature].mean())
+    input_data[feature] = st.slider(feature.replace('_', ' ').title(), min_val, max_val, mean_val)
+
+input_df = pd.DataFrame([input_data])
+prediction = model.predict(input_df)[0]
+pred_label = {0: 'Low', 1: 'Medium', 2: 'High'}[prediction]
+
+st.success(f"Predicted Dropout Risk: **{pred_label}**")
